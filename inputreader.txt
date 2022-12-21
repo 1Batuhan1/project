@@ -1,0 +1,25 @@
+#include<fstream>
+#include<stdio.h>
+#include<iostream>
+using namespace std;  
+int main()
+{
+
+
+FILE* file=fopen("deneme.txt","rb");
+int n[6];
+fscanf(file,"%d%d%d%d%d%d",&n[0],&n[1],&n[2],&n[3],&n[4],&n[5]);
+
+printf(" %d %d %d \n %d %d %d",n[0],n[1],n[2],n[3],n[4],n[5],cal);
+getchar();
+
+
+
+
+
+
+return 0;
+
+
+     
+ }

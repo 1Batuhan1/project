@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Giriş / Üye Ol</title>
+    <link rel="stylesheet" href="static/style.css">
+
+</head>
+<body>
+    <div class="container">
+        <!-- slider Container -->
+        <div class="slider-container">
+            <!--giriş Yap Formu -->
+            <div class="form" id="loginForm">
+                <h2>Giriş Yap</h2>
+                <form id="login">
+                    <div class="input-group">
+                        <label for="login-username">Kullanıcı Adı:</label>
+                        <input type="text" id="login-username" name="username" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="login-password">Şifre:</label>
+                        <input type="password" id="login-password" name="password" required>
+                          
+                    </div>
+                    <div class="checkbox-group"> 
+                  <label>
+                     <input type="checkbox" id="rememberMe"> 
+                              Beni Hatırla
+                               </label></div>
+                    <button type="submit">Giriş Yap</button>
+                </form>
+                  
+
+                   <div class="buttons">
+                     <p>Hesabınız yok mu?</p>
+                     <button id="toSignup">Üye Ol</button>
+                   </div>
+                     <a href="">Şifremi Unuttum?</a>
+                
+            </div>
+
+            <!-- üye Ol Formu -->
+            <div class="form" id="signupForm">
+                <h2>Üye Ol</h2>
+                <form id="signup">
+                    <div class="input-group">
+                        <label for="signup-username">Kullanıcı Adı:</label>
+                        <input type="text" id="signup-username" name="username" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="signup-email">E-posta:</label>
+                        <input type="email" id="signup-email" name="email" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="signup-password">Şifre:</label>
+                        <input type="password" id="signup-password" name="password" required>
+                    </div>
+                    <button type="submit">Üye Ol</button>
+                    
+                </form>
+                <div class="buttons">
+                    <p>Zaten hesabınız var mı?</p>
+                    <button id="toLogin">Giriş Yap</button>
+                 </div>
+               
+            </div>
+        </div>
+
+    </div>
+
+
+
+
+    <script src="static/scripts.js"></script>
+</body>
+
+</html>
+

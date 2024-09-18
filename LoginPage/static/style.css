@@ -1,0 +1,104 @@
+/* Genel stil */
+body {
+    font-family: Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+    background-color: #f4f4f4;
+    background-image: url(resim.jpg);
+}
+
+.container {
+    width: 450px;
+  
+    background: #fff;
+    border-radius: 15px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    position: relative;
+    text-align: center;
+    padding: 20px;
+  
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.8); /* Beyaz arka plan ve %80 şeffaflık */
+    
+   
+    position: relative;
+    text-align: center;
+
+}
+
+.slider-container {
+    
+    display: flex;
+    width: 200%; /* İki form yan yana */
+    transition: transform 0.5s ease-in-out; /* Slider geçiş animasyonu */
+    box-sizing: border-box; /* Formlar taşmasın */
+}
+
+.form {
+    
+    width: 50%; /* Her form, slider-container genişliğinin yarısı kadar olmalı */
+    padding: 20px;
+    box-sizing: border-box; /* Taşmayı önlemek için */
+}
+
+.input-group {
+    margin-bottom: 15px;
+    text-align: left;
+}
+
+.input-group label {
+    display: block;
+    margin-bottom: 5px;
+}
+
+.input-group input {
+    width: 90%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+button {
+    background-color: #28a745;
+    color: #fff;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 10px;
+    width: 70%;
+}
+
+button:hover {
+    background-color: #218838;
+}
+
+.buttons {
+    margin: 20px 0;
+}
+
+#toLogin {
+    background-color: #007bff;
+    width: 70%;
+}
+#toSignup {
+    background-color: #007bff;
+    width: 70%;
+}
+
+#toSignup:hover {
+    background-color: #0056b3;
+}
+
+#rememberMe {
+
+    justify-content: start;
+}
+
+.checkbox-group {
+    display: flex;
+    justify-content: left;
+}

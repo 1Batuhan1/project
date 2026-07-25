@@ -1,2 +1,1 @@
 # project
-printf("Hello World");

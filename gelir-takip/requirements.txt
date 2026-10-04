@@ -1,0 +1,6 @@
+# Çekirdek (veri + hesaplama) yalnızca Python standart kütüphanesini kullanır.
+# Test:
+pytest>=8
+
+# Adım 11'de (PySide6 arayüzü) eklenecek:
+# PySide6>=6.6

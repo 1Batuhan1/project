@@ -6,6 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 
+from .formatting import tr_siralama_anahtari
 from .models import Kayit, Maas
 
 _SIFIR = Decimal("0.00")
@@ -50,7 +51,7 @@ def aylik_ozet(kayitlar: list[Kayit], yil: int, ay: int) -> AylikOzet:
     kategoriler: dict[str, Decimal] = defaultdict(lambda: _SIFIR)
     for g in ay_gelirleri:
         kategoriler[g.kategori] += g.tutar
-    sirali = dict(sorted(kategoriler.items(), key=lambda oge: (-oge[1], oge[0])))
+    sirali = dict(sorted(kategoriler.items(), key=lambda oge: (-oge[1], tr_siralama_anahtari(oge[0]))))
 
     return AylikOzet(
         yil=yil,

@@ -10,6 +10,7 @@ from gelir_takip.formatting import (
     para_bicimle,
     tarih_ayristir,
     tarih_bicimle,
+    tr_siralama_anahtari,
     yuzde_bicimle,
 )
 
@@ -42,13 +43,28 @@ def test_para_bicimle(tutar, beklenen):
         ("₺ 500", "500"),
         ("2.500,00 TL", "2500.00"),
         ("1.234.567", "1234567"),
+        ("1,234.56", "1234.56"),       # ABD biçimi: son ayraç ondalıktır
+        ("1,234,567", "1234567"),      # virgüllü binlik gruplar
+        ("1,234,567.89", "1234567.89"),
+        ("1.234.567,89", "1234567.89"),
+        ("12,5", "12.5"),
+        ("1e3", "1E+3"),
     ],
 )
 def test_para_ayristir(metin, beklenen):
     assert para_ayristir(metin) == Decimal(beklenen)
 
 
-@pytest.mark.parametrize("metin", ["", "   ", "abc", "12,3,4x"])
+@pytest.mark.parametrize(
+    "metin",
+    [
+        "", "   ", "abc", "12,3,4x",
+        "NaN", "Infinity", "-Infinity",
+        "1,234",      # 1,234 = 1 lira 23,4 kuruş demek olurdu; sessizce 1,23 yapma, kullanıcıya sor
+        "10,005", "1234.567", "1.234,567", "1e-3",
+        "1,2.3,4",
+    ],
+)
 def test_para_ayristir_gecersiz(metin):
     with pytest.raises(ValueError):
         para_ayristir(metin)
@@ -77,7 +93,26 @@ def test_tarih_gidis_donus():
     assert tarih_ayristir("2026-10-04") == date(2026, 10, 4)
 
 
+@pytest.mark.parametrize("metin", ["04/10/2026", "04-10-2026", "4.10.2026", " 04.10.2026 "])
+def test_tarih_ayristir_farkli_ayraclar(metin):
+    assert tarih_ayristir(metin) == date(2026, 10, 4)
+
+
 @pytest.mark.parametrize("metin", ["", "32.01.2026", "abc", "2026/10/04"])
 def test_tarih_ayristir_gecersiz(metin):
     with pytest.raises(ValueError):
         tarih_ayristir(metin)
+
+
+def test_turkce_siralama():
+    adlar = ["Zeta", "Çay", "Eğitim", "Ulaşım", "ılık", "Isı", "İz", "Dolap", "Şeker", "Sağlık", "Ağ", "Kira 2", "Kira", "Ayakkabı"]
+    assert sorted(adlar, key=tr_siralama_anahtari) == [
+        "Ağ", "Ayakkabı", "Çay", "Dolap", "Eğitim", "ılık", "Isı", "İz", "Kira", "Kira 2", "Sağlık", "Şeker", "Ulaşım", "Zeta",
+    ]
+
+
+def test_turkce_siralama_buyuk_kucuk_harf_ayni():
+    assert tr_siralama_anahtari("ÇAY") == tr_siralama_anahtari("çay")
+    assert tr_siralama_anahtari("IŞIK") == tr_siralama_anahtari("ışık")   # I -> ı
+    assert tr_siralama_anahtari("İNCE") == tr_siralama_anahtari("ince")   # İ -> i
+    assert tr_siralama_anahtari("ı") < tr_siralama_anahtari("i")

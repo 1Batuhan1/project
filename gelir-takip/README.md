@@ -41,7 +41,13 @@ python -m gelir_takip --db yol/gelir.db   # başka bir veritabanı dosyası
 ```
 
 Kullanım: **Maaşı Düzenle** ile maaş girilir; **＋ Gider Ekle / ＋ Ek Gelir Ekle** ile kayıt eklenir.
-Satıra çift tıkla = düzenle, `Delete` = sil, `Ctrl+←` / `Ctrl+→` = önceki / sonraki ay.
+Satıra çift tıkla ya da `Enter` = düzenle, `Delete` = sil, `Ctrl+←` / `Ctrl+→` = önceki / sonraki ay.
+Tablo başlığına tıklayınca o sütuna göre sıralanır (tekrar tıklayınca yön döner; Türkçe harf sırasıyla).
+
+- **Tutar girişi:** `1.234,56`, `1234,56`, `1,234.56`, `₺ 500` kabul edilir. Belirsiz girişler (ör. `1,234`) sessizce
+  yuvarlanmaz, düzeltmeniz istenir. **Tarih:** `04.10.2026`, `04/10/2026`, `04-10-2026`.
+- **Maaş geçmişi:** Maaş formunda hangi aydan itibaren hangi maaşın girildiği listelenir; yanlış girilen kayıt
+  buradan kaldırılabilir (o aydan sonrası için bir önceki maaş geçerli olur).
 
 - **Özet sekmesi:** önceki aya göre kalan ve gider değişimi, harcama oranı çubuğu, gider özeti
   (adet, ortalama, en yüksek) ve kategori dağılımları.
@@ -66,8 +72,8 @@ python -m pytest
 | 5 | Tkinter: ana pencere, ay seçici, gelir tablosu | ✅ |
 | 6 | Tkinter: maaş formu + gider / ek gelir formu (ekle / düzenle / sil) | ✅ |
 | 7 | Tkinter: ayrıntılı özet (önceki ayla karşılaştırma, harcama oranı, kategori dağılımı) + Tümünü Sil | ✅ |
-| 8 | CSV dışa / içe aktarma | ⏳ |
-| 9 | Tkinter sürümünü cilalama ve gözden geçirme | ⏳ |
+| 8 | CSV dışa / içe aktarma | ⏭ ertelendi |
+| 9 | Tkinter sürümünü cilalama ve gözden geçirme (sıralama, hata pencereleri, para girişi düzeltmeleri, maaş geçmişi) | ✅ |
 | 10 | PySide6 tasarım kararları (tema, yerleşim, grafikler) | ⏳ |
 | 11 | PySide6 arayüzü (`ui_qt/`) | ⏳ |
 | 12 | Paketleme (PyInstaller ile .exe) | ⏳ |

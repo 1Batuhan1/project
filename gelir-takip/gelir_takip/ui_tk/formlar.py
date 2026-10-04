@@ -5,9 +5,9 @@ from __future__ import annotations
 import tkinter as tk
 from collections.abc import Callable
 from datetime import date
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
-from ..formatting import ay_etiketi, para_ayristir, tarih_ayristir, tarih_bicimle
+from ..formatting import ay_etiketi, para_ayristir, para_bicimle, tarih_ayristir, tarih_bicimle
 from ..models import TUR_ADLARI, Kayit
 from ..servis import ButceServisi
 
@@ -94,9 +94,69 @@ class MaasFormu(_Diyalog):
             wraplength=340,
         ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
-        self._alt_cubuk_olustur(3)
+        self._gecmis_bolumunu_olustur(satir=3)
+        self._alt_cubuk_olustur(6)
         self._goster(self.tutar_kutusu)
         self.tutar_kutusu.selection_range(0, "end")
+
+    def _gecmis_bolumunu_olustur(self, satir: int) -> None:
+        """Maaş geçmişi: hangi aydan itibaren hangi maaş; yanlış girilen kaydı kaldırmak için."""
+        ttk.Label(self.cerceve, text="Maaş geçmişi", font=("TkDefaultFont", 9, "bold")).grid(
+            row=satir, column=0, columnspan=2, sticky="w", pady=(14, 4)
+        )
+        cerceve = ttk.Frame(self.cerceve)
+        cerceve.grid(row=satir + 1, column=0, columnspan=2, sticky="ew")
+        cerceve.columnconfigure(0, weight=1)
+        self.gecmis = ttk.Treeview(
+            cerceve, columns=("baslangic", "tutar"), show="headings", height=4, selectmode="browse"
+        )
+        self.gecmis.heading("baslangic", text="Şu aydan itibaren", anchor="w")
+        self.gecmis.column("baslangic", width=190, anchor="w")
+        self.gecmis.heading("tutar", text="Maaş", anchor="e")
+        self.gecmis.column("tutar", width=140, anchor="e")
+        kaydirma = ttk.Scrollbar(cerceve, orient="vertical", command=self.gecmis.yview)
+        self.gecmis.configure(yscrollcommand=kaydirma.set)
+        self.gecmis.grid(row=0, column=0, sticky="ew")
+        kaydirma.grid(row=0, column=1, sticky="ns")
+        self.gecmis.bind(
+            "<<TreeviewSelect>>",
+            lambda _olay: self.kaldir_dugmesi.state(["!disabled" if self.gecmis.selection() else "disabled"]),
+        )
+
+        self.kaldir_dugmesi = ttk.Button(self.cerceve, text="Seçili kaydı kaldır", command=self.kaydi_kaldir)
+        self.kaldir_dugmesi.grid(row=satir + 2, column=0, columnspan=2, sticky="e", pady=(6, 0))
+        self._gecmisi_yenile()
+
+    def _gecmisi_yenile(self) -> None:
+        self.gecmis.delete(*self.gecmis.get_children())
+        for maas in reversed(self.servis.maas_gecmisi()):  # en yeni üstte
+            self.gecmis.insert(
+                "", "end", iid=f"{maas.yil}-{maas.ay}", values=(ay_etiketi(maas.yil, maas.ay), para_bicimle(maas.tutar))
+            )
+        self.kaldir_dugmesi.state(["disabled"])
+
+    def kaydi_kaldir(self) -> None:
+        """Seçili maaş kaydını kaldırır; o aydan sonrası için bir önceki maaş kaydı geçerli olur."""
+        secim = self.gecmis.selection()
+        if not secim:
+            return
+        yil, ay = (int(parca) for parca in secim[0].split("-"))
+        tutar = self.gecmis.item(secim[0], "values")[1]
+        onay = messagebox.askyesno(
+            "Maaş kaydını kaldır",
+            f"{ay_etiketi(yil, ay)} ayından başlayan {tutar} maaş kaydı kaldırılsın mı?\n\n"
+            "Bu aydan sonraki aylarda bir önceki maaş kaydı geçerli olur "
+            "(yoksa maaş girilmemiş sayılır).",
+            parent=self,
+        )
+        if not onay:
+            return
+        self.servis.maas_sil(yil, ay)
+        mevcut = self.servis.gecerli_maas(self.yil, self.ay)
+        self.tutar_var.set(_tutar_metni(mevcut.tutar) if mevcut else "")
+        self._gecmisi_yenile()
+        if self.kaydedildi:
+            self.kaydedildi()
 
     def kaydet(self) -> None:
         try:

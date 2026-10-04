@@ -12,6 +12,7 @@ AY_ADLARI = (
 )
 
 _BINLIK_NOKTALI = re.compile(r"^\d{1,3}(\.\d{3})+$")
+_BINLIK_VIRGULLU = re.compile(r"^\d{1,3}(,\d{3}){2,}$")  # tek virgül ondalık sayılır, en az iki grup şart
 
 
 def ay_adi(ay: int) -> str:
@@ -46,23 +47,38 @@ def yuzde_bicimle(oran: Decimal | None) -> str:
 def para_ayristir(metin: str) -> Decimal:
     """Kullanıcının yazdığı tutarı Decimal'e çevirir.
 
-    Kabul edilenler: '1.234,56', '1234,56', '1234.56', '1.234', '₺ 500', '500 TL'
-    Geçersizse ValueError fırlatır.
+    Kabul edilenler: '1.234,56' (TR), '1,234.56' (US), '1234,56', '1234.56', '1.234',
+    '1,234,567', '₺ 500', '500 TL'. Hem nokta hem virgül varsa SON görülen ayraç ondalıktır.
+    Belirsiz ya da hatalı girişte (sayı değil, 2'den fazla ondalık basamak) ValueError fırlatır;
+    tutarı sessizce yanlış okumaktansa kullanıcıya düzeltme şansı verilir.
     """
     temiz = (metin or "").replace("₺", "").replace("TL", "").replace("tl", "")
     temiz = temiz.replace(" ", "").strip()
     if not temiz:
         raise ValueError("Tutar boş olamaz.")
 
-    if "," in temiz:
-        temiz = temiz.replace(".", "").replace(",", ".")
-    elif _BINLIK_NOKTALI.match(temiz):
+    if "," in temiz and "." in temiz:
+        if temiz.rfind(",") > temiz.rfind("."):   # 1.234,56
+            temiz = temiz.replace(".", "").replace(",", ".")
+        else:                                       # 1,234.56
+            temiz = temiz.replace(",", "")
+    elif "," in temiz:
+        if _BINLIK_VIRGULLU.match(temiz):           # 1,234,567
+            temiz = temiz.replace(",", "")
+        else:                                       # 12,5
+            temiz = temiz.replace(",", ".")
+    elif _BINLIK_NOKTALI.match(temiz):              # 1.234.567
         temiz = temiz.replace(".", "")
 
     try:
-        return Decimal(temiz)
+        tutar = Decimal(temiz)
     except InvalidOperation:
         raise ValueError("Tutar sayı olmalıdır.") from None
+    if not tutar.is_finite():
+        raise ValueError("Tutar sayı olmalıdır.")
+    if tutar.as_tuple().exponent < -2:
+        raise ValueError("Tutarda en fazla 2 ondalık basamak olabilir (örn. 1.234,56).")
+    return tutar
 
 
 def tarih_bicimle(tarih: date) -> str:
@@ -70,11 +86,25 @@ def tarih_bicimle(tarih: date) -> str:
 
 
 def tarih_ayristir(metin: str) -> date:
-    """'04.10.2026' veya '2026-10-04' -> date. Geçersizse ValueError."""
+    """'04.10.2026', '04/10/2026', '04-10-2026' veya '2026-10-04' -> date. Geçersizse ValueError."""
     metin = (metin or "").strip()
-    for bicim in ("%d.%m.%Y", "%Y-%m-%d"):
+    for bicim in ("%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d"):
         try:
             return datetime.strptime(metin, bicim).date()
         except ValueError:
             continue
     raise ValueError("Tarih GG.AA.YYYY biçiminde olmalıdır.")
+
+
+_TR_ALFABE = "abcçdefgğhıijklmnoöpqrsştuüvwxyz"
+_TR_SIRA = {harf: sira + 1000 for sira, harf in enumerate(_TR_ALFABE)}
+
+
+def tr_siralama_anahtari(metin: str) -> tuple[int, ...]:
+    """Türkçe alfabe sırasına göre sıralama anahtarı (... c ç d ... g ğ h ı i ... o ö ... s ş t u ü v ...).
+
+    Büyük/küçük harf fark etmez; rakam ve boşluk harflerden önce gelir.
+    Python'un varsayılan sıralaması Ç, Ğ, İ, Ö, Ş, Ü'yü z'den sonraya atar.
+    """
+    kucuk = (metin or "").replace("I", "ı").replace("İ", "i").lower()
+    return tuple(_TR_SIRA.get(harf, ord(harf)) for harf in kucuk)

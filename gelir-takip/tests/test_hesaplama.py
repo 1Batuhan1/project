@@ -68,6 +68,11 @@ def test_kategori_esitlikte_isme_gore_sirali():
     assert list(aylik_ozet(liste, 2026, 10).kategori_toplamlari) == ["A", "Z"]
 
 
+def test_kategori_esitlikte_turkce_alfabe_sirasi():
+    liste = [g(date(2026, 10, 1), "100", ad) for ad in ("Zeta", "Çay", "Eğitim", "Dolap")]
+    assert list(aylik_ozet(liste, 2026, 10).kategori_toplamlari) == ["Çay", "Dolap", "Eğitim", "Zeta"]
+
+
 def test_ortalama_yuvarlama():
     liste = [g(date(2026, 10, 1), "10"), g(date(2026, 10, 2), "10"), g(date(2026, 10, 3), "10.01")]
     assert aylik_ozet(liste, 2026, 10).ortalama == Decimal("10.00")

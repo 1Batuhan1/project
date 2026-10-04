@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import sys
 import tkinter as tk
+import traceback
 from datetime import date
 from tkinter import font as tkfont
 from tkinter import messagebox, ttk
 
-from ..formatting import AY_ADLARI, ay_etiketi, para_bicimle, tarih_bicimle
+from ..formatting import AY_ADLARI, ay_etiketi, para_bicimle, tarih_bicimle, tr_siralama_anahtari
 from ..hesaplama import onceki_ay, sonraki_ay
 from ..models import TUR_ADLARI, TUR_GELIR, TUR_GIDER, YIL_ARALIGI
 from ..servis import ButceServisi
@@ -25,6 +27,16 @@ _KOLONLAR = (
 )
 
 
+# Başlığa tıklanınca tabloyu sıralama anahtarları. Tutar, ekranda göründüğü gibi işaretlidir (gider eksi).
+_SIRALAMA_ANAHTARLARI = {
+    "tarih": lambda h: (h.kayit.tarih, h.kayit.id),
+    "tur": lambda h: (TUR_ADLARI[h.tur], h.kayit.tarih),
+    "kategori": lambda h: tr_siralama_anahtari(h.kayit.kategori),
+    "aciklama": lambda h: tr_siralama_anahtari(h.kayit.aciklama),
+    "tutar": lambda h: h.kayit.tutar if h.tur == TUR_GELIR else -h.kayit.tutar,
+}
+
+
 def _tutar_metni(tur: str, tutar) -> str:
     """Gider eksi, ek gelir artı işaretiyle: '−1.200,00 ₺' / '+4.750,00 ₺'. Sıfırda işaret yok."""
     if not tutar:
@@ -38,6 +50,7 @@ class AnaPencere(ttk.Frame):
         self.servis = servis
         bugun = date.today()
         self.yil, self.ay = bugun.year, bugun.month
+        self.siralama = ("tarih", True)  # (kolon, azalan mı); varsayılan: en yeni tarih üstte
 
         self._tema_ve_fontlar()
         self._ust_cubuk_olustur()
@@ -50,6 +63,7 @@ class AnaPencere(ttk.Frame):
         self.pack(fill="both", expand=True)
 
         pencere = self.winfo_toplevel()
+        pencere.report_callback_exception = self._beklenmeyen_hata
         pencere.bind("<Control-Left>", lambda _olay: self.onceki_aya_git())
         pencere.bind("<Control-Right>", lambda _olay: self.sonraki_aya_git())
 
@@ -156,7 +170,9 @@ class AnaPencere(ttk.Frame):
             selectmode="browse",
         )
         for kolon_id, baslik, genislik, hizalama in _KOLONLAR:
-            self.tablo.heading(kolon_id, text=baslik, anchor=hizalama)
+            self.tablo.heading(
+                kolon_id, text=baslik, anchor=hizalama, command=lambda k=kolon_id: self._siralamayi_degistir(k)
+            )
             self.tablo.column(
                 kolon_id, width=genislik, anchor=hizalama, stretch=(kolon_id == "aciklama")
             )
@@ -170,7 +186,8 @@ class AnaPencere(ttk.Frame):
         kaydirma.grid(row=0, column=1, sticky="ns")
 
         self.tablo.bind("<<TreeviewSelect>>", self._secim_degisti)
-        self.tablo.bind("<Double-1>", lambda _olay: self.duzenle())
+        self.tablo.bind("<Double-1>", self._cift_tiklandi)
+        self.tablo.bind("<Return>", lambda _olay: self.duzenle())
         self.tablo.bind("<Delete>", lambda _olay: self.sil())
 
         # Ay boşsa tablonun üstünde görünen bilgi yazısı
@@ -252,8 +269,11 @@ class AnaPencere(ttk.Frame):
             self.maas_dugmesi.configure(text="Maaşı Düzenle")
 
         # Tablo
+        kolon, azalan = self.siralama
+        hareketler = sorted(rapor.hareketler, key=_SIRALAMA_ANAHTARLARI[kolon], reverse=azalan)
+        self._basliklari_guncelle()
         self.tablo.delete(*self.tablo.get_children())
-        for sira, hareket in enumerate(rapor.hareketler):
+        for sira, hareket in enumerate(hareketler):
             kayit = hareket.kayit
             self.tablo.insert(
                 "",
@@ -350,6 +370,36 @@ class AnaPencere(ttk.Frame):
         self.ay_sec(tarih.year, tarih.month)
         self.yenile(secili=f"{tur}:{kayit_id}")
 
+    def _siralamayi_degistir(self, kolon: str) -> None:
+        """Başlığa tıklanınca o kolona göre sırala; aynı başlığa tekrar tıklanınca yönü çevir."""
+        if self.siralama[0] == kolon:
+            self.siralama = (kolon, not self.siralama[1])
+        else:
+            self.siralama = (kolon, kolon == "tarih")  # tarih en yeni üstte, diğerleri A→Z / küçükten büyüğe
+        secim = self.tablo.selection()
+        self.yenile(secili=secim[0] if secim else None)
+
+    def _basliklari_guncelle(self) -> None:
+        kolon, azalan = self.siralama
+        for kolon_id, baslik, _genislik, _hizalama in _KOLONLAR:
+            ok = (" ▼" if azalan else " ▲") if kolon_id == kolon else ""
+            self.tablo.heading(kolon_id, text=baslik + ok)
+
+    def _cift_tiklandi(self, olay: tk.Event) -> None:
+        """Yalnızca bir satıra çift tıklanınca düzenle (başlığa ya da boş alana çift tıklamak düzenlemesin)."""
+        if self.tablo.identify_row(olay.y):
+            self.duzenle()
+
+    def _beklenmeyen_hata(self, tur: type, deger: BaseException, iz: object) -> None:
+        """Tk geri çağrılarında yakalanmayan hata: konsola yaz, kullanıcıya da göster (uygulama kapanmaz)."""
+        traceback.print_exception(tur, deger, iz, file=sys.stderr)
+        messagebox.showerror(
+            "Beklenmeyen hata",
+            f"Bir hata oluştu:\n\n{deger}\n\nUygulama çalışmaya devam ediyor. "
+            "Sorun tekrarlanırsa bu mesajı not alın.",
+            parent=self,
+        )
+
     def _secili(self) -> tuple[str, int] | None:
         secim = self.tablo.selection()
         if not secim:
@@ -361,6 +411,16 @@ class AnaPencere(ttk.Frame):
         durum = "!disabled" if self.tablo.selection() else "disabled"
         self.duzenle_dugmesi.state([durum])
         self.sil_dugmesi.state([durum])
+
+
+def hata_goster(baslik: str, mesaj: str) -> None:
+    """Ana pencere açılamadan önceki hatalar için (ör. veritabanı açılamadı). Konsolsuz .exe'de de görünür."""
+    kok = tk.Tk()
+    kok.withdraw()
+    try:
+        messagebox.showerror(baslik, mesaj, parent=kok)
+    finally:
+        kok.destroy()
 
 
 def calistir(servis: ButceServisi) -> None:

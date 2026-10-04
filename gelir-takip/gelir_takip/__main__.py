@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import sqlite3
 import sys
 from datetime import date
 
-from .db import Depo
+from .db import Depo, varsayilan_db_yolu
 from .demo import ornek_veri_ekle
 from .servis import ButceServisi
 
@@ -22,7 +23,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ayristirici.parse_args(argv)
 
     try:
-        from .ui_tk.ana_pencere import calistir
+        from .ui_tk.ana_pencere import calistir, hata_goster
     except ImportError as hata:
         print(f"Tkinter yüklenemedi: {hata}", file=sys.stderr)
         print("Linux'ta: sudo apt install python3-tk", file=sys.stderr)
@@ -32,7 +33,16 @@ def main(argv: list[str] | None = None) -> int:
         servis = ButceServisi(depo=Depo(":memory:"))
         ornek_veri_ekle(servis, date.today())
     else:
-        servis = ButceServisi(db_yolu=args.db)
+        try:
+            servis = ButceServisi(db_yolu=args.db)
+        except (sqlite3.Error, OSError) as hata:
+            mesaj = (
+                f"Veritabanı açılamadı:\n{args.db or varsayilan_db_yolu()}\n\n{hata}\n\n"
+                "Dosya bozuk olabilir, başka bir programda açık olabilir ya da klasöre yazma izniniz olmayabilir."
+            )
+            print(mesaj, file=sys.stderr)
+            hata_goster("Gelir Takip", mesaj)
+            return 1
 
     calistir(servis)
     return 0

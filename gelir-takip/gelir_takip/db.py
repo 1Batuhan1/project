@@ -167,7 +167,8 @@ class Depo:
 
     def __init__(self, yol: str | Path = ":memory:") -> None:
         if str(yol) != ":memory:":
-            Path(yol).parent.mkdir(parents=True, exist_ok=True)
+            yol = Path(yol).expanduser()  # cmd/PowerShell "~" açmaz
+            yol.parent.mkdir(parents=True, exist_ok=True)
         self._baglanti = sqlite3.connect(str(yol))
         self._baglanti.row_factory = sqlite3.Row
         self._baglanti.executescript(

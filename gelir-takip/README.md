@@ -28,6 +28,16 @@ Arayüz yalnızca `GelirServisi` ve `formatting` ile konuşur; SQLite'ı ya da h
 - Çekirdek için ek paket yok. Testler için: `pip install -r requirements.txt`
 - Tkinter Python ile gelir (Linux'ta gerekirse `sudo apt install python3-tk`)
 
+## Uygulamayı çalıştırma
+
+```
+python -m gelir_takip --demo     # örnek verilerle aç (kayıt tutmaz, deneme için)
+python -m gelir_takip            # gerçek kullanım: ~/.gelir_takip/gelir.db
+python -m gelir_takip --db yol/gelir.db   # başka bir veritabanı dosyası
+```
+
+Kısayol: `Ctrl+←` / `Ctrl+→` önceki / sonraki ay.
+
 ## Testleri çalıştırma
 
 ```
@@ -43,7 +53,7 @@ python -m pytest
 | 2 | Proje iskeleti | ✅ |
 | 3 | Veri katmanı (SQLite) | ✅ |
 | 4 | İş mantığı + testler | ✅ |
-| 5 | Tkinter: ana pencere, ay seçici, gelir tablosu | ⏳ |
+| 5 | Tkinter: ana pencere, ay seçici, gelir tablosu | ✅ |
 | 6 | Tkinter: gelir formu (ekle / düzenle / sil) | ⏳ |
 | 7 | Tkinter: özet paneli (toplam, ortalama, değişim, kategori dağılımı) | ⏳ |
 | 8 | CSV dışa / içe aktarma | ⏳ |

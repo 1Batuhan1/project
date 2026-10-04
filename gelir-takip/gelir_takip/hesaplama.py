@@ -1,4 +1,4 @@
-"""İş mantığı: aylık özet ve ay karşılaştırması. Saf fonksiyonlar, veritabanı bilmez."""
+"""İş mantığı: aylık özet, bütçe (kalan) ve ay karşılaştırması. Saf fonksiyonlar, veritabanı bilmez."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 
-from .models import Gelir
+from .models import Kayit, Maas
 
 _SIFIR = Decimal("0.00")
 
@@ -18,7 +18,7 @@ class AylikOzet:
     toplam: Decimal = _SIFIR
     adet: int = 0
     ortalama: Decimal = _SIFIR
-    en_yuksek: Gelir | None = None
+    en_yuksek: Kayit | None = None
     # kategori -> toplam, en büyük kategori önce
     kategori_toplamlari: dict[str, Decimal] = field(default_factory=dict)
 
@@ -38,9 +38,9 @@ def sonraki_ay(yil: int, ay: int) -> tuple[int, int]:
     return (yil + 1, 1) if ay == 12 else (yil, ay + 1)
 
 
-def aylik_ozet(gelirler: list[Gelir], yil: int, ay: int) -> AylikOzet:
+def aylik_ozet(kayitlar: list[Kayit], yil: int, ay: int) -> AylikOzet:
     """Verilen listeden yalnızca (yil, ay) içindeki kayıtları özetler."""
-    ay_gelirleri = [g for g in gelirler if g.tarih.year == yil and g.tarih.month == ay]
+    ay_gelirleri = [g for g in kayitlar if g.tarih.year == yil and g.tarih.month == ay]
     if not ay_gelirleri:
         return AylikOzet(yil=yil, ay=ay)
 
@@ -63,10 +63,52 @@ def aylik_ozet(gelirler: list[Gelir], yil: int, ay: int) -> AylikOzet:
     )
 
 
-def karsilastir(bu_ay: AylikOzet, onceki: AylikOzet) -> AyKarsilastirma:
-    fark = bu_ay.toplam - onceki.toplam
-    if onceki.toplam == 0:
+def degisim(simdiki: Decimal, onceki: Decimal) -> AyKarsilastirma:
+    """İki tutar arasındaki fark ve yüzde değişim. Önceki tutar 0 ya da negatifse yüzde anlamsızdır (None)."""
+    fark = simdiki - onceki
+    if onceki <= 0:
         yuzde = None
     else:
-        yuzde = (fark / onceki.toplam * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
-    return AyKarsilastirma(onceki_toplam=onceki.toplam, fark=fark, yuzde_degisim=yuzde)
+        yuzde = (fark / onceki * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    return AyKarsilastirma(onceki_toplam=onceki, fark=fark, yuzde_degisim=yuzde)
+
+
+def karsilastir(bu_ay: AylikOzet, onceki: AylikOzet) -> AyKarsilastirma:
+    return degisim(bu_ay.toplam, onceki.toplam)
+
+
+@dataclass(frozen=True)
+class AylikButce:
+    """Bir ayın tam tablosu: maaş + ek gelir - gider = kalan."""
+
+    yil: int
+    ay: int
+    maas: Decimal
+    ek_gelir: AylikOzet
+    gider: AylikOzet
+    toplam_gelir: Decimal            # maaş + ek gelir
+    kalan: Decimal                   # toplam gelir - gider (aşılırsa negatif)
+    harcama_orani: Decimal | None    # gider / toplam gelir * 100; gelir yoksa None
+
+
+def butce_hesapla(
+    maas: Maas | None, gelirler: list[Kayit], giderler: list[Kayit], yil: int, ay: int
+) -> AylikButce:
+    """`maas`, bu ay için geçerli maaş kaydıdır (yoksa None: maaş girilmemiş sayılır)."""
+    maas_tutari = maas.tutar if maas else _SIFIR
+    ek_gelir = aylik_ozet(gelirler, yil, ay)
+    gider = aylik_ozet(giderler, yil, ay)
+    toplam_gelir = maas_tutari + ek_gelir.toplam
+    harcama_orani = None
+    if toplam_gelir > 0:
+        harcama_orani = (gider.toplam / toplam_gelir * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    return AylikButce(
+        yil=yil,
+        ay=ay,
+        maas=maas_tutari,
+        ek_gelir=ek_gelir,
+        gider=gider,
+        toplam_gelir=toplam_gelir,
+        kalan=toplam_gelir - gider.toplam,
+        harcama_orani=harcama_orani,
+    )

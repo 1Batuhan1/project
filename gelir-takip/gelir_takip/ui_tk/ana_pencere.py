@@ -1,41 +1,55 @@
-"""Tkinter ana penceresi: ay seçici + seçili ayın gelir tablosu."""
+"""Tkinter ana penceresi: ay seçici, maaş, gider / ek gelir tablosu ve aylık özet."""
 
 from __future__ import annotations
 
 import tkinter as tk
 from datetime import date
 from tkinter import font as tkfont
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 from ..formatting import AY_ADLARI, ay_etiketi, para_bicimle, tarih_bicimle
 from ..hesaplama import onceki_ay, sonraki_ay
-from ..servis import GelirServisi
+from ..models import TUR_ADLARI, TUR_GELIR, TUR_GIDER, YIL_ARALIGI
+from ..servis import ButceServisi
+from .formlar import KayitFormu, MaasFormu
 
-YIL_ARALIGI = (2000, 2100)
+_YESIL = "#1b7f3b"
+_KIRMIZI = "#b3261e"
+_SOLUK = "#6b6b6b"
 
 # (kolon id, başlık, genişlik, hizalama)
 _KOLONLAR = (
     ("tarih", "Tarih", 100, "center"),
-    ("kategori", "Kategori", 140, "w"),
-    ("aciklama", "Açıklama", 320, "w"),
+    ("tur", "Tür", 80, "center"),
+    ("kategori", "Kategori", 130, "w"),
+    ("aciklama", "Açıklama", 290, "w"),
     ("tutar", "Tutar", 140, "e"),
 )
 
 
+def _tutar_metni(tur: str, tutar) -> str:
+    """Gider eksi, ek gelir artı işaretiyle: '−1.200,00 ₺' / '+4.750,00 ₺'. Sıfırda işaret yok."""
+    if not tutar:
+        return para_bicimle(tutar)
+    return ("−" if tur == TUR_GIDER else "+") + para_bicimle(tutar)
+
+
 class AnaPencere(ttk.Frame):
-    def __init__(self, ana: tk.Misc, servis: GelirServisi) -> None:
+    def __init__(self, ana: tk.Misc, servis: ButceServisi) -> None:
         super().__init__(ana, padding=12)
         self.servis = servis
         bugun = date.today()
         self.yil, self.ay = bugun.year, bugun.month
 
-        self._tema_ayarla()
+        self._tema_ve_fontlar()
         self._ust_cubuk_olustur()
+        self._maas_bolumu_olustur()
+        self._arac_cubugu_olustur()
         self._tablo_olustur()
-        self._alt_cubuk_olustur()
+        self._ozet_olustur()
 
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(1, weight=1)
+        self.rowconfigure(3, weight=1)
         self.pack(fill="both", expand=True)
 
         pencere = self.winfo_toplevel()
@@ -47,13 +61,21 @@ class AnaPencere(ttk.Frame):
 
     # ---- Görünüm kurulumu -------------------------------------------------
 
-    def _tema_ayarla(self) -> None:
+    def _tema_ve_fontlar(self) -> None:
         stil = ttk.Style(self)
         for ad in ("vista", "aqua", "clam"):
             if ad in stil.theme_names():
                 stil.theme_use(ad)
                 break
         stil.configure("Treeview", rowheight=26)
+
+        # Tk, font nesnesini referans tutulmazsa siler; o yüzden özniteliklerde saklıyoruz
+        varsayilan = tkfont.nametofont("TkDefaultFont")
+        self._kalin_font = varsayilan.copy()
+        self._kalin_font.configure(weight="bold")
+        self._buyuk_font = varsayilan.copy()
+        boyut = varsayilan.cget("size")
+        self._buyuk_font.configure(weight="bold", size=boyut + 3 if boyut > 0 else boyut - 3)
 
     def _ust_cubuk_olustur(self) -> None:
         cubuk = ttk.Frame(self)
@@ -81,9 +103,34 @@ class AnaPencere(ttk.Frame):
         ttk.Button(cubuk, text="▶", width=3, command=self.sonraki_aya_git).pack(side="left", padx=6)
         ttk.Button(cubuk, text="Bugün", command=self.bugune_git).pack(side="left", padx=(12, 0))
 
+    def _maas_bolumu_olustur(self) -> None:
+        cerceve = ttk.LabelFrame(self, text="Aylık maaş", padding=(10, 6))
+        cerceve.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        cerceve.columnconfigure(1, weight=1)
+
+        self.maas_tutar_etiketi = ttk.Label(cerceve, font=self._buyuk_font)
+        self.maas_tutar_etiketi.grid(row=0, column=0, sticky="w")
+        self.maas_not_etiketi = ttk.Label(cerceve, foreground=_SOLUK)
+        self.maas_not_etiketi.grid(row=0, column=1, sticky="w", padx=(14, 0))
+        self.maas_dugmesi = ttk.Button(cerceve, command=self.maas_duzenle)
+        self.maas_dugmesi.grid(row=0, column=2, sticky="e")
+
+    def _arac_cubugu_olustur(self) -> None:
+        cubuk = ttk.Frame(self)
+        cubuk.grid(row=2, column=0, sticky="ew", pady=(0, 6))
+
+        ttk.Button(cubuk, text="＋ Gider Ekle", command=lambda: self.kayit_ekle(TUR_GIDER)).pack(side="left")
+        ttk.Button(cubuk, text="＋ Ek Gelir Ekle", command=lambda: self.kayit_ekle(TUR_GELIR)).pack(
+            side="left", padx=(6, 0)
+        )
+        self.sil_dugmesi = ttk.Button(cubuk, text="Sil", command=self.sil)
+        self.sil_dugmesi.pack(side="right")
+        self.duzenle_dugmesi = ttk.Button(cubuk, text="Düzenle", command=self.duzenle)
+        self.duzenle_dugmesi.pack(side="right", padx=(0, 6))
+
     def _tablo_olustur(self) -> None:
         cerceve = ttk.Frame(self)
-        cerceve.grid(row=1, column=0, sticky="nsew")
+        cerceve.grid(row=3, column=0, sticky="nsew")
         cerceve.columnconfigure(0, weight=1)
         cerceve.rowconfigure(0, weight=1)
 
@@ -99,29 +146,37 @@ class AnaPencere(ttk.Frame):
                 kolon_id, width=genislik, anchor=hizalama, stretch=(kolon_id == "aciklama")
             )
         self.tablo.tag_configure("cift", background="#f3f6fa")
+        self.tablo.tag_configure(TUR_GIDER, foreground=_KIRMIZI)
+        self.tablo.tag_configure(TUR_GELIR, foreground=_YESIL)
 
         kaydirma = ttk.Scrollbar(cerceve, orient="vertical", command=self.tablo.yview)
         self.tablo.configure(yscrollcommand=kaydirma.set)
         self.tablo.grid(row=0, column=0, sticky="nsew")
         kaydirma.grid(row=0, column=1, sticky="ns")
 
+        self.tablo.bind("<<TreeviewSelect>>", self._secim_degisti)
+        self.tablo.bind("<Double-1>", lambda _olay: self.duzenle())
+        self.tablo.bind("<Delete>", lambda _olay: self.sil())
+
         # Ay boşsa tablonun üstünde görünen bilgi yazısı
         self.bos_etiket = ttk.Label(
-            cerceve, text="Bu ay için gelir kaydı yok.", foreground="#7a7a7a", background="white"
+            cerceve, text="Bu ay için gider veya ek gelir kaydı yok.", foreground=_SOLUK, background="white"
         )
 
-    def _alt_cubuk_olustur(self) -> None:
-        cubuk = ttk.Frame(self)
-        cubuk.grid(row=2, column=0, sticky="ew", pady=(10, 0))
-
-        kalin = tkfont.nametofont("TkDefaultFont").copy()
-        kalin.configure(weight="bold")
-        self._kalin_font = kalin  # Tk, font nesnesini referans tutulmazsa siler
-
-        self.kayit_etiketi = ttk.Label(cubuk)
-        self.kayit_etiketi.pack(side="left")
-        self.toplam_etiketi = ttk.Label(cubuk, font=kalin)
-        self.toplam_etiketi.pack(side="right")
+    def _ozet_olustur(self) -> None:
+        cerceve = ttk.Frame(self, padding=(0, 10, 0, 0))
+        cerceve.grid(row=4, column=0, sticky="ew")
+        self.ozet_degerleri: dict[str, ttk.Label] = {}
+        for sutun, (anahtar, baslik) in enumerate(
+            (("maas", "Maaş"), ("ek_gelir", "Ek gelir"), ("gider", "Giderler"), ("kalan", "Kalan"))
+        ):
+            cerceve.columnconfigure(sutun, weight=1)
+            ttk.Label(cerceve, text=baslik, foreground=_SOLUK).grid(row=0, column=sutun)
+            etiket = ttk.Label(cerceve, font=self._buyuk_font if anahtar == "kalan" else self._kalin_font)
+            etiket.grid(row=1, column=sutun)
+            self.ozet_degerleri[anahtar] = etiket
+        self.kayit_sayisi_etiketi = ttk.Label(cerceve, foreground=_SOLUK)
+        self.kayit_sayisi_etiketi.grid(row=2, column=0, columnspan=4, pady=(6, 0))
 
     # ---- Ay seçimi --------------------------------------------------------
 
@@ -158,42 +213,124 @@ class AnaPencere(ttk.Frame):
 
     # ---- Veriyi ekrana yansıtma -------------------------------------------
 
-    def yenile(self) -> None:
-        """Seçili ayın kayıtlarını veritabanından okuyup tabloyu ve alt çubuğu günceller."""
-        rapor = self.servis.aylik_rapor(self.yil, self.ay)
+    def yenile(self, secili: str | None = None) -> None:
+        """Seçili ayı veritabanından okuyup maaşı, tabloyu ve özeti günceller.
 
+        `secili`: yenilemeden sonra seçili hale getirilecek satır ("gider:5" gibi).
+        """
+        rapor = self.servis.aylik_rapor(self.yil, self.ay)
+        butce = rapor.butce
+
+        # Maaş bölümü
+        if rapor.maas is None:
+            self.maas_tutar_etiketi.configure(text="Girilmedi", foreground=_SOLUK)
+            self.maas_not_etiketi.configure(text="Bu ay için bir maaş tanımlanmamış.")
+            self.maas_dugmesi.configure(text="Maaş Gir")
+        else:
+            self.maas_tutar_etiketi.configure(text=para_bicimle(rapor.maas.tutar), foreground="")
+            baslangic = (rapor.maas.yil, rapor.maas.ay)
+            self.maas_not_etiketi.configure(
+                text="Bu aydan itibaren geçerli"
+                if baslangic == (self.yil, self.ay)
+                else f"{ay_etiketi(*baslangic)} ayından beri geçerli (sonraki aylara taşınır)"
+            )
+            self.maas_dugmesi.configure(text="Maaşı Düzenle")
+
+        # Tablo
         self.tablo.delete(*self.tablo.get_children())
-        for sira, gelir in enumerate(rapor.gelirler):
+        for sira, hareket in enumerate(rapor.hareketler):
+            kayit = hareket.kayit
             self.tablo.insert(
                 "",
                 "end",
-                iid=str(gelir.id),  # Adım 6'da düzenle/sil için kayıt kimliği
+                iid=f"{hareket.tur}:{kayit.id}",
                 values=(
-                    tarih_bicimle(gelir.tarih),
-                    gelir.kategori,
-                    gelir.aciklama,
-                    para_bicimle(gelir.tutar),
+                    tarih_bicimle(kayit.tarih),
+                    TUR_ADLARI[hareket.tur],
+                    kayit.kategori,
+                    kayit.aciklama,
+                    _tutar_metni(hareket.tur, kayit.tutar),
                 ),
-                tags=("cift",) if sira % 2 else (),
+                tags=(hareket.tur,) + (("cift",) if sira % 2 else ()),
             )
-
-        if rapor.gelirler:
+        if rapor.hareketler:
             self.bos_etiket.place_forget()
         else:
             self.bos_etiket.place(relx=0.5, rely=0.4, anchor="center")
+        if secili and self.tablo.exists(secili):
+            self.tablo.selection_set(secili)
+            self.tablo.see(secili)
 
-        self.kayit_etiketi.configure(text=f"{rapor.ozet.adet} kayıt")
-        self.toplam_etiketi.configure(
-            text=f"{ay_etiketi(self.yil, self.ay)} toplamı:  {para_bicimle(rapor.ozet.toplam)}"
+        # Özet
+        self.ozet_degerleri["maas"].configure(text=para_bicimle(butce.maas))
+        self.ozet_degerleri["ek_gelir"].configure(text=_tutar_metni(TUR_GELIR, butce.ek_gelir.toplam))
+        self.ozet_degerleri["gider"].configure(text=_tutar_metni(TUR_GIDER, butce.gider.toplam))
+        self.ozet_degerleri["kalan"].configure(
+            text=para_bicimle(butce.kalan), foreground=_KIRMIZI if butce.kalan < 0 else _YESIL
         )
+        self.kayit_sayisi_etiketi.configure(
+            text=f"{ay_etiketi(self.yil, self.ay)}: {len(rapor.hareketler)} kayıt"
+        )
+        self._secim_degisti()
+
+    # ---- İşlemler -----------------------------------------------------------
+
+    def maas_duzenle(self) -> None:
+        MaasFormu(self, self.servis, self.yil, self.ay, kaydedildi=self.yenile)
+
+    def kayit_ekle(self, tur: str) -> None:
+        KayitFormu(self, self.servis, tur, self.yil, self.ay, kaydedildi=self._kayit_kaydedildi)
+
+    def duzenle(self) -> None:
+        secili = self._secili()
+        if secili is None:
+            return
+        tur, kayit_id = secili
+        kayit = self.servis.kayit_getir(tur, kayit_id)
+        if kayit is None:  # başka yerden silinmiş
+            self.yenile()
+            return
+        KayitFormu(self, self.servis, tur, self.yil, self.ay, kayit=kayit, kaydedildi=self._kayit_kaydedildi)
+
+    def sil(self) -> None:
+        secili = self._secili()
+        if secili is None:
+            return
+        tur, kayit_id = secili
+        satir = self.tablo.item(f"{tur}:{kayit_id}", "values")
+        onay = messagebox.askyesno(
+            "Kaydı sil",
+            f"{satir[0]}  {satir[2]}  {satir[4]}\n\nBu kaydı silmek istiyor musunuz?",
+            parent=self,
+        )
+        if onay:
+            self.servis.kayit_sil(tur, kayit_id)
+            self.yenile()
+
+    def _kayit_kaydedildi(self, tur: str, kayit_id: int, tarih: date) -> None:
+        """Kaydedilen kaydın ayına geç (farklı aysa) ve satırı seçili göster."""
+        self.ay_sec(tarih.year, tarih.month)
+        self.yenile(secili=f"{tur}:{kayit_id}")
+
+    def _secili(self) -> tuple[str, int] | None:
+        secim = self.tablo.selection()
+        if not secim:
+            return None
+        tur, _, kayit_id = secim[0].partition(":")
+        return tur, int(kayit_id)
+
+    def _secim_degisti(self, _olay: tk.Event | None = None) -> None:
+        durum = "!disabled" if self.tablo.selection() else "disabled"
+        self.duzenle_dugmesi.state([durum])
+        self.sil_dugmesi.state([durum])
 
 
-def calistir(servis: GelirServisi) -> None:
+def calistir(servis: ButceServisi) -> None:
     """Pencereyi açar ve kapanana kadar çalıştırır."""
     kok = tk.Tk()
     kok.title("Gelir Takip")
-    kok.geometry("820x520")
-    kok.minsize(640, 360)
+    kok.geometry("900x680")
+    kok.minsize(720, 520)
     AnaPencere(kok, servis)
     try:
         kok.mainloop()

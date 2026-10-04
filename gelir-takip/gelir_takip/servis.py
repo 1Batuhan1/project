@@ -7,58 +7,102 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from .db import GelirDeposu, varsayilan_db_yolu
-from .hesaplama import AyKarsilastirma, AylikOzet, aylik_ozet, karsilastir, onceki_ay
-from .models import VARSAYILAN_KATEGORILER, Gelir
+from .db import Depo, varsayilan_db_yolu
+from .hesaplama import AyKarsilastirma, AylikButce, butce_hesapla, degisim, onceki_ay
+from .models import KAYIT_SINIFLARI, TUR_GELIR, TUR_GIDER, VARSAYILAN_KATEGORILER, Kayit, Maas
+
+
+@dataclass(frozen=True)
+class Hareket:
+    """Tabloda gösterilecek tek satır: bir gider ya da ek gelir kaydı."""
+
+    tur: str  # TUR_GELIR | TUR_GIDER
+    kayit: Kayit
 
 
 @dataclass(frozen=True)
 class AylikRapor:
-    gelirler: list[Gelir]
-    ozet: AylikOzet
-    karsilastirma: AyKarsilastirma
+    hareketler: list[Hareket]                # tarihe göre yeniden eskiye
+    maas: Maas | None                        # bu ay geçerli maaş kaydı (None: hiç girilmemiş)
+    butce: AylikButce
+    kalan_karsilastirma: AyKarsilastirma     # "kalan" tutarının önceki aya göre değişimi
 
 
-class GelirServisi:
-    def __init__(self, depo: GelirDeposu | None = None, db_yolu: str | Path | None = None) -> None:
-        self._depo = depo or GelirDeposu(db_yolu or varsayilan_db_yolu())
+class ButceServisi:
+    def __init__(self, depo: Depo | None = None, db_yolu: str | Path | None = None) -> None:
+        self._depo = depo or Depo(db_yolu or varsayilan_db_yolu())
 
     def kapat(self) -> None:
         self._depo.kapat()
 
-    def gelir_ekle(self, tarih: date, tutar: Decimal | str | float, kategori: str, aciklama: str = "") -> Gelir:
-        """Doğrular ve kaydeder. Geçersizse GecersizGelirHatasi fırlatır."""
-        return self._depo.ekle(Gelir(tarih=tarih, tutar=tutar, kategori=kategori, aciklama=aciklama))
+    # ---- Maaş -------------------------------------------------------------
 
-    def gelir_guncelle(
-        self, gelir_id: int, tarih: date, tutar: Decimal | str | float, kategori: str, aciklama: str = ""
+    def maas_ayarla(self, yil: int, ay: int, tutar: Decimal | str | float) -> Maas:
+        """(yil, ay) ayından itibaren geçerli maaşı kaydeder; önceki aylar değişmez."""
+        return self._depo.maaslar.ayarla(yil, ay, tutar)
+
+    def gecerli_maas(self, yil: int, ay: int) -> Maas | None:
+        return self._depo.maaslar.gecerli(yil, ay)
+
+    def maas_sil(self, yil: int, ay: int) -> bool:
+        return self._depo.maaslar.sil(yil, ay)
+
+    def maas_gecmisi(self) -> list[Maas]:
+        return self._depo.maaslar.tumu()
+
+    # ---- Gider / ek gelir kayıtları (tur: TUR_GIDER | TUR_GELIR) ------------
+
+    def kayit_ekle(
+        self, tur: str, tarih: date, tutar: Decimal | str | float, kategori: str, aciklama: str = ""
+    ) -> Kayit:
+        """Doğrular ve kaydeder. Geçersizse GecersizKayitHatasi (ValueError) fırlatır."""
+        kayit = KAYIT_SINIFLARI[tur](tarih=tarih, tutar=tutar, kategori=kategori, aciklama=aciklama)
+        return self._depo.kayitlar(tur).ekle(kayit)
+
+    def kayit_guncelle(
+        self, tur: str, kayit_id: int, tarih: date, tutar: Decimal | str | float, kategori: str, aciklama: str = ""
     ) -> bool:
-        return self._depo.guncelle(
-            Gelir(id=gelir_id, tarih=tarih, tutar=tutar, kategori=kategori, aciklama=aciklama)
-        )
+        kayit = KAYIT_SINIFLARI[tur](id=kayit_id, tarih=tarih, tutar=tutar, kategori=kategori, aciklama=aciklama)
+        return self._depo.kayitlar(tur).guncelle(kayit)
 
-    def gelir_sil(self, gelir_id: int) -> bool:
-        return self._depo.sil(gelir_id)
+    def kayit_sil(self, tur: str, kayit_id: int) -> bool:
+        return self._depo.kayitlar(tur).sil(kayit_id)
 
-    def gelir_getir(self, gelir_id: int) -> Gelir | None:
-        return self._depo.getir(gelir_id)
+    def kayit_getir(self, tur: str, kayit_id: int) -> Kayit | None:
+        return self._depo.kayitlar(tur).getir(kayit_id)
 
-    def tum_gelirler(self) -> list[Gelir]:
-        return self._depo.tumunu_listele()
+    def tum_kayitlar(self, tur: str) -> list[Kayit]:
+        return self._depo.kayitlar(tur).tumunu_listele()
 
-    def kategoriler(self) -> list[str]:
+    def kategoriler(self, tur: str) -> list[str]:
         """Varsayılanlar + kullanıcının daha önce yazdığı kategoriler (tekrarsız)."""
-        liste = list(VARSAYILAN_KATEGORILER)
+        liste = list(VARSAYILAN_KATEGORILER[tur])
         gorulen = {k.casefold() for k in liste}
-        for kategori in self._depo.kullanilan_kategoriler():
+        for kategori in self._depo.kayitlar(tur).kullanilan_kategoriler():
             if kategori.casefold() not in gorulen:
                 liste.append(kategori)
                 gorulen.add(kategori.casefold())
         return liste
 
+    # ---- Rapor ---------------------------------------------------------------
+
+    def _ay_butcesi(self, yil: int, ay: int) -> tuple[list[Kayit], list[Kayit], Maas | None, AylikButce]:
+        gelirler = self._depo.gelirler.ay_listele(yil, ay)
+        giderler = self._depo.giderler.ay_listele(yil, ay)
+        maas = self._depo.maaslar.gecerli(yil, ay)
+        return gelirler, giderler, maas, butce_hesapla(maas, gelirler, giderler, yil, ay)
+
     def aylik_rapor(self, yil: int, ay: int) -> AylikRapor:
-        gelirler = self._depo.ay_listele(yil, ay)
-        onceki_yil, onceki_ay_no = onceki_ay(yil, ay)
-        bu_ay = aylik_ozet(gelirler, yil, ay)
-        onceki = aylik_ozet(self._depo.ay_listele(onceki_yil, onceki_ay_no), onceki_yil, onceki_ay_no)
-        return AylikRapor(gelirler=gelirler, ozet=bu_ay, karsilastirma=karsilastir(bu_ay, onceki))
+        gelirler, giderler, maas, butce = self._ay_butcesi(yil, ay)
+        onceki_butce = self._ay_butcesi(*onceki_ay(yil, ay))[3]
+        hareketler = sorted(
+            [Hareket(TUR_GELIR, k) for k in gelirler] + [Hareket(TUR_GIDER, k) for k in giderler],
+            key=lambda h: (h.kayit.tarih, h.kayit.id),
+            reverse=True,
+        )
+        return AylikRapor(
+            hareketler=hareketler,
+            maas=maas,
+            butce=butce,
+            kalan_karsilastirma=degisim(butce.kalan, onceki_butce.kalan),
+        )

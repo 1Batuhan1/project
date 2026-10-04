@@ -1,15 +1,21 @@
 from datetime import date
 from decimal import Decimal
 
-from gelir_takip.db import GelirDeposu
-from gelir_takip.hesaplama import aylik_ozet, karsilastir, onceki_ay, sonraki_ay
-from gelir_takip.models import Gelir
-from gelir_takip.servis import GelirServisi
+from gelir_takip.db import Depo
+from gelir_takip.hesaplama import aylik_ozet, butce_hesapla, degisim, karsilastir, onceki_ay, sonraki_ay
+from gelir_takip.models import Gelir, Gider, Maas
+from gelir_takip.servis import ButceServisi
 
 
-def g(tarih, tutar, kategori="Maaş"):
+def g(tarih, tutar, kategori="Freelance"):
     return Gelir(tarih=tarih, tutar=tutar, kategori=kategori)
 
+
+def gider(tarih, tutar, kategori="Market"):
+    return Gider(tarih=tarih, tutar=tutar, kategori=kategori)
+
+
+# ---- Aylık özet --------------------------------------------------------------
 
 def test_bos_ay_ozeti_sifir():
     ozet = aylik_ozet([], 2026, 10)
@@ -65,6 +71,8 @@ def test_ay_gecisleri():
     assert sonraki_ay(2026, 10) == (2026, 11)
 
 
+# ---- Karşılaştırma -----------------------------------------------------------
+
 def test_karsilastir_artis_ve_dusus():
     onceki = aylik_ozet([g(date(2026, 9, 1), "1000")], 2026, 9)
     artis = karsilastir(aylik_ozet([g(date(2026, 10, 1), "1250")], 2026, 10), onceki)
@@ -82,32 +90,122 @@ def test_karsilastir_onceki_ay_bossa_yuzde_yok():
     assert sonuc.yuzde_degisim is None
 
 
-def test_servis_aylik_rapor_uctan_uca():
-    servis = GelirServisi(depo=GelirDeposu(":memory:"))
-    servis.gelir_ekle(date(2026, 9, 10), "2000", "Maaş")
-    servis.gelir_ekle(date(2026, 10, 5), "2500", "Maaş", "zamlı")
-    servis.gelir_ekle(date(2026, 10, 12), "500", "Freelance")
-    rapor = servis.aylik_rapor(2026, 10)
-    assert len(rapor.gelirler) == 2
-    assert rapor.ozet.toplam == Decimal("3000.00")
-    assert rapor.karsilastirma.onceki_toplam == Decimal("2000.00")
-    assert rapor.karsilastirma.yuzde_degisim == Decimal("50.0")
-    servis.kapat()
+def test_degisim_onceki_negatifse_yuzde_yok():
+    sonuc = degisim(Decimal("100"), Decimal("-50"))
+    assert sonuc.fark == Decimal("150")
+    assert sonuc.yuzde_degisim is None
+
+
+# ---- Bütçe: maaş + ek gelir - gider = kalan ------------------------------------
+
+def test_butce_maas_ek_gelir_ve_giderden_kalan():
+    maas = Maas(2026, 8, "30000")
+    gelirler = [g(date(2026, 10, 12), "4750")]
+    giderler = [gider(date(2026, 10, 1), "12000", "Kira"), gider(date(2026, 10, 8), "4200")]
+    b = butce_hesapla(maas, gelirler, giderler, 2026, 10)
+    assert b.maas == Decimal("30000.00")
+    assert b.ek_gelir.toplam == Decimal("4750.00")
+    assert b.gider.toplam == Decimal("16200.00")
+    assert b.toplam_gelir == Decimal("34750.00")
+    assert b.kalan == Decimal("18550.00")
+    assert b.harcama_orani == Decimal("46.6")  # 16200 / 34750
+
+
+def test_butce_maas_girilmemisse_sifir_sayilir():
+    b = butce_hesapla(None, [], [gider(date(2026, 10, 1), "500")], 2026, 10)
+    assert b.maas == Decimal("0.00")
+    assert b.kalan == Decimal("-500.00")
+    assert b.harcama_orani is None  # gelir yok: oran anlamsız
+
+
+def test_butce_giderler_maasi_asarsa_kalan_negatif():
+    b = butce_hesapla(Maas(2026, 10, "1000"), [], [gider(date(2026, 10, 2), "1500")], 2026, 10)
+    assert b.kalan == Decimal("-500.00")
+    assert b.harcama_orani == Decimal("150.0")
+
+
+def test_butce_baska_ayin_kayitlari_karismaz():
+    giderler = [gider(date(2026, 9, 30), "999"), gider(date(2026, 10, 1), "100")]
+    b = butce_hesapla(Maas(2026, 1, "1000"), [], giderler, 2026, 10)
+    assert b.gider.toplam == Decimal("100.00")
+    assert b.kalan == Decimal("900.00")
+
+
+# ---- Servis uçtan uca ----------------------------------------------------------
+
+def yeni_servis():
+    return ButceServisi(depo=Depo(":memory:"))
+
+
+def test_servis_rapor_maas_tasinir_ve_giderler_dusulur():
+    s = yeni_servis()
+    s.maas_ayarla(2026, 8, "30000")
+    s.kayit_ekle("gider", date(2026, 9, 5), "10000", "Kira")
+    s.kayit_ekle("gider", date(2026, 10, 5), "12000", "Kira", "zamlı")
+    s.kayit_ekle("gelir", date(2026, 10, 12), "500", "Freelance")
+    rapor = s.aylik_rapor(2026, 10)
+    assert rapor.maas == Maas(2026, 8, "30000")  # Ağustos'tan beri geçerli
+    assert rapor.butce.kalan == Decimal("18500.00")
+    assert [h.tur for h in rapor.hareketler] == ["gelir", "gider"]  # tarihe göre yeniden eskiye
+    # önceki ay (Eylül): 30000 - 10000 = 20000 -> bu ay 18500: fark -1500, %-7,5
+    assert rapor.kalan_karsilastirma.onceki_toplam == Decimal("20000.00")
+    assert rapor.kalan_karsilastirma.fark == Decimal("-1500.00")
+    assert rapor.kalan_karsilastirma.yuzde_degisim == Decimal("-7.5")
+    s.kapat()
+
+
+def test_servis_zam_sadece_o_aydan_itibaren():
+    s = yeni_servis()
+    s.maas_ayarla(2026, 1, "30000")
+    s.maas_ayarla(2026, 10, "35000")
+    assert s.aylik_rapor(2026, 9).butce.maas == Decimal("30000.00")
+    assert s.aylik_rapor(2026, 10).butce.maas == Decimal("35000.00")
+    assert s.aylik_rapor(2027, 2).butce.maas == Decimal("35000.00")
+    assert s.aylik_rapor(2025, 12).maas is None
+    s.kapat()
 
 
 def test_servis_ocak_icin_onceki_yil_aralik():
-    servis = GelirServisi(depo=GelirDeposu(":memory:"))
-    servis.gelir_ekle(date(2025, 12, 31), "100", "Maaş")
-    servis.gelir_ekle(date(2026, 1, 1), "150", "Maaş")
-    assert servis.aylik_rapor(2026, 1).karsilastirma.onceki_toplam == Decimal("100.00")
-    servis.kapat()
+    s = yeni_servis()
+    s.maas_ayarla(2025, 1, "1000")
+    s.kayit_ekle("gider", date(2025, 12, 31), "100", "Market")
+    s.kayit_ekle("gider", date(2026, 1, 1), "150", "Market")
+    k = s.aylik_rapor(2026, 1).kalan_karsilastirma
+    assert k.onceki_toplam == Decimal("900.00")
+    s.kapat()
 
 
-def test_servis_kategoriler_varsayilan_ve_ozel_tekrarsiz():
-    servis = GelirServisi(depo=GelirDeposu(":memory:"))
-    servis.gelir_ekle(date(2026, 10, 1), "10", "Burs")
-    servis.gelir_ekle(date(2026, 10, 2), "10", "maaş")  # varsayılanın küçük harfli hali
-    kategoriler = servis.kategoriler()
-    assert "Burs" in kategoriler
-    assert [k.casefold() for k in kategoriler].count("maaş") == 1
-    servis.kapat()
+def test_servis_kayit_guncelle_ve_sil():
+    s = yeni_servis()
+    kayit = s.kayit_ekle("gider", date(2026, 10, 3), "100", "Market")
+    assert s.kayit_guncelle("gider", kayit.id, date(2026, 10, 4), "250,5".replace(",", "."), "Fatura", "su") is True
+    degisen = s.kayit_getir("gider", kayit.id)
+    assert (degisen.tarih, degisen.tutar, degisen.kategori, degisen.aciklama) == (
+        date(2026, 10, 4), Decimal("250.50"), "Fatura", "su")
+    assert s.kayit_sil("gider", kayit.id) is True
+    assert s.kayit_getir("gider", kayit.id) is None
+    s.kapat()
+
+
+def test_servis_gecersiz_kayit_hata_verir_ve_kaydetmez():
+    s = yeni_servis()
+    try:
+        s.kayit_ekle("gider", date(2026, 10, 3), "-5", "Market")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("ValueError bekleniyordu")
+    assert s.tum_kayitlar("gider") == []
+    s.kapat()
+
+
+def test_servis_kategoriler_tur_basina_varsayilan_ve_ozel_tekrarsiz():
+    s = yeni_servis()
+    s.kayit_ekle("gider", date(2026, 10, 1), "10", "Evcil Hayvan")
+    s.kayit_ekle("gider", date(2026, 10, 2), "10", "market")  # varsayılanın küçük harfli hali
+    kategoriler = s.kategoriler("gider")
+    assert "Evcil Hayvan" in kategoriler
+    assert [k.casefold() for k in kategoriler].count("market") == 1
+    assert "Freelance" not in kategoriler
+    assert "Freelance" in s.kategoriler("gelir")
+    s.kapat()

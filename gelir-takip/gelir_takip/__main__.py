@@ -6,9 +6,9 @@ import argparse
 import sys
 from datetime import date
 
-from .db import GelirDeposu
+from .db import Depo
 from .demo import ornek_veri_ekle
-from .servis import GelirServisi
+from .servis import ButceServisi
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -29,10 +29,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if args.demo:
-        servis = GelirServisi(depo=GelirDeposu(":memory:"))
+        servis = ButceServisi(depo=Depo(":memory:"))
         ornek_veri_ekle(servis, date.today())
     else:
-        servis = GelirServisi(db_yolu=args.db)
+        servis = ButceServisi(db_yolu=args.db)
 
     calistir(servis)
     return 0

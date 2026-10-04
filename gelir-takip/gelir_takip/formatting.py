@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 AY_ADLARI = (
     "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
@@ -24,18 +24,23 @@ def ay_etiketi(yil: int, ay: int) -> str:
 
 
 def para_bicimle(tutar: Decimal) -> str:
-    """Decimal('1234.5') -> '1.234,50 ₺'"""
-    metin = f"{Decimal(tutar):,.2f}"
-    metin = metin.replace(",", "_").replace(".", ",").replace("_", ".")
-    return f"{metin} ₺"
+    """Decimal('1234.5') -> '1.234,50 ₺'; negatifse '−500,00 ₺' (gerçek eksi işaretiyle)."""
+    tutar = Decimal(tutar).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    metin = f"{abs(tutar):,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+    return f"{'−' if tutar < 0 else ''}{metin} ₺"
+
+
+def oran_bicimle(oran: Decimal) -> str:
+    """Decimal('52.6') -> '%52,6'"""
+    return f"%{oran:.1f}".replace(".", ",")
 
 
 def yuzde_bicimle(oran: Decimal | None) -> str:
-    """Decimal('12.5') -> '+%12,5'; None -> '—'"""
+    """Değişim oranı, işaretli: Decimal('12.5') -> '+%12,5'; Decimal('-3') -> '−%3,0'; None -> '—'"""
     if oran is None:
         return "—"
-    metin = f"{oran:+.1f}".replace(".", ",")
-    return f"{metin[0]}%{metin[1:]}"
+    isaret = "−" if oran < 0 else "+"
+    return f"{isaret}{oran_bicimle(abs(oran))}"
 
 
 def para_ayristir(metin: str) -> Decimal:

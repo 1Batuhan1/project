@@ -5,6 +5,7 @@ import pytest
 
 from gelir_takip.formatting import (
     ay_etiketi,
+    oran_bicimle,
     para_ayristir,
     para_bicimle,
     tarih_ayristir,
@@ -20,6 +21,9 @@ from gelir_takip.formatting import (
         (Decimal("5"), "5,00 ₺"),
         (Decimal("1234.5"), "1.234,50 ₺"),
         (Decimal("1234567.89"), "1.234.567,89 ₺"),
+        (Decimal("-500"), "−500,00 ₺"),
+        (Decimal("-1234.5"), "−1.234,50 ₺"),
+        (Decimal("-0.001"), "0,00 ₺"),  # yuvarlayınca sıfır: "−0,00" yazılmaz
     ],
 )
 def test_para_bicimle(tutar, beklenen):
@@ -52,8 +56,14 @@ def test_para_ayristir_gecersiz(metin):
 
 def test_yuzde_bicimle():
     assert yuzde_bicimle(Decimal("12.5")) == "+%12,5"
-    assert yuzde_bicimle(Decimal("-3.0")) == "-%3,0"
+    assert yuzde_bicimle(Decimal("-3.0")) == "−%3,0"
+    assert yuzde_bicimle(Decimal("0")) == "+%0,0"
     assert yuzde_bicimle(None) == "—"
+
+
+def test_oran_bicimle():
+    assert oran_bicimle(Decimal("52.6")) == "%52,6"
+    assert oran_bicimle(Decimal("100")) == "%100,0"
 
 
 def test_ay_etiketi():

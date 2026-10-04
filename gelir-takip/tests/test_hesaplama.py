@@ -2,7 +2,16 @@ from datetime import date
 from decimal import Decimal
 
 from gelir_takip.db import Depo
-from gelir_takip.hesaplama import aylik_ozet, butce_hesapla, degisim, karsilastir, onceki_ay, sonraki_ay
+from gelir_takip.hesaplama import (
+    DIGER_KATEGORILER,
+    aylik_ozet,
+    butce_hesapla,
+    degisim,
+    karsilastir,
+    kategori_paylari,
+    onceki_ay,
+    sonraki_ay,
+)
 from gelir_takip.models import Gelir, Gider, Maas
 from gelir_takip.servis import ButceServisi
 
@@ -208,4 +217,78 @@ def test_servis_kategoriler_tur_basina_varsayilan_ve_ozel_tekrarsiz():
     assert [k.casefold() for k in kategoriler].count("market") == 1
     assert "Freelance" not in kategoriler
     assert "Freelance" in s.kategoriler("gelir")
+    s.kapat()
+
+
+# ---- Kategori payları -----------------------------------------------------------
+
+def test_kategori_paylari_yuzde_ve_siralama():
+    liste = [
+        gider(date(2026, 10, 1), "12000", "Kira"),
+        gider(date(2026, 10, 2), "4200", "Market"),
+        gider(date(2026, 10, 3), "900", "Ulaşım"),
+        gider(date(2026, 10, 4), "900", "Market"),
+    ]
+    paylar = kategori_paylari(aylik_ozet(liste, 2026, 10))  # toplam 18000
+    assert [(p.kategori, p.tutar, p.yuzde) for p in paylar] == [
+        ("Kira", Decimal("12000.00"), Decimal("66.7")),
+        ("Market", Decimal("5100.00"), Decimal("28.3")),   # 4200 + 900 birleşir
+        ("Ulaşım", Decimal("900.00"), Decimal("5.0")),
+    ]
+
+
+def test_kategori_paylari_bos_ay_bos_liste():
+    assert kategori_paylari(aylik_ozet([], 2026, 10)) == []
+
+
+def test_kategori_paylari_en_fazla_ile_gruplar():
+    liste = [gider(date(2026, 10, 1), tutar, ad) for ad, tutar in
+             (("A", "500"), ("B", "300"), ("C", "100"), ("D", "60"), ("E", "40"))]
+    paylar = kategori_paylari(aylik_ozet(liste, 2026, 10), en_fazla=3)
+    assert [p.kategori for p in paylar] == ["A", "B", DIGER_KATEGORILER]
+    assert paylar[2].tutar == Decimal("200.00")      # C + D + E
+    assert paylar[2].yuzde == Decimal("20.0")
+    assert sum(p.tutar for p in paylar) == Decimal("1000.00")
+
+
+def test_kategori_paylari_en_fazla_yeterliyse_gruplamaz():
+    liste = [gider(date(2026, 10, 1), "100", "A"), gider(date(2026, 10, 2), "100", "B")]
+    assert [p.kategori for p in kategori_paylari(aylik_ozet(liste, 2026, 10), en_fazla=2)] == ["A", "B"]
+
+
+# ---- Servis: genişletilmiş rapor ve toplu silme -----------------------------------
+
+def test_rapor_gider_karsilastirmasi_ve_onceki_butce():
+    s = yeni_servis()
+    s.maas_ayarla(2026, 1, "10000")
+    s.kayit_ekle("gider", date(2026, 9, 5), "2000", "Market")
+    s.kayit_ekle("gider", date(2026, 10, 5), "2500", "Market")
+    r = s.aylik_rapor(2026, 10)
+    assert r.onceki_veri_var is True
+    assert r.onceki_butce.kalan == Decimal("8000.00")
+    assert r.gider_karsilastirma.fark == Decimal("500.00")
+    assert r.gider_karsilastirma.yuzde_degisim == Decimal("25.0")
+    s.kapat()
+
+
+def test_rapor_onceki_ay_bossa_veri_yok_isaretlenir():
+    s = yeni_servis()
+    s.kayit_ekle("gider", date(2026, 10, 5), "100", "Market")
+    assert s.aylik_rapor(2026, 10).onceki_veri_var is False
+    s.maas_ayarla(2026, 9, "1000")  # önceki ayda maaş tanımlıysa karşılaştırma anlamlı
+    assert s.aylik_rapor(2026, 10).onceki_veri_var is True
+    s.kapat()
+
+
+def test_servis_tum_verileri_sil():
+    s = yeni_servis()
+    s.maas_ayarla(2026, 1, "1000")
+    s.kayit_ekle("gider", date(2026, 10, 5), "100", "Market")
+    s.kayit_ekle("gelir", date(2026, 10, 6), "50", "Freelance")
+    assert s.veri_sayilari().toplam == 3
+    silinen = s.tum_verileri_sil()
+    assert (silinen.gider, silinen.gelir, silinen.maas) == (1, 1, 1)
+    assert s.veri_sayilari().toplam == 0
+    rapor = s.aylik_rapor(2026, 10)
+    assert rapor.hareketler == [] and rapor.maas is None and rapor.butce.kalan == Decimal("0.00")
     s.kapat()

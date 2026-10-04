@@ -11,7 +11,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from .models import KAYIT_SINIFLARI, TUR_GELIR, TUR_GIDER, Kayit, Maas
+from .models import KAYIT_SINIFLARI, TUR_GELIR, TUR_GIDER, Kayit, Maas, VeriSayilari
 
 _KAYIT_TABLOSU = """
 CREATE TABLE IF NOT EXISTS {tablo} (
@@ -180,6 +180,23 @@ class Depo:
     def kayitlar(self, tur: str) -> KayitDeposu:
         """'gelir' ya da 'gider' için ilgili depo."""
         return {TUR_GELIR: self.gelirler, TUR_GIDER: self.giderler}[tur]
+
+    def sayilar(self) -> VeriSayilari:
+        def say(tablo: str) -> int:
+            return self._baglanti.execute(f"SELECT COUNT(*) FROM {tablo}").fetchone()[0]
+
+        return VeriSayilari(gelir=say("gelir"), gider=say("gider"), maas=say("maas"))
+
+    def hepsini_sil(self) -> VeriSayilari:
+        """Tüm gelir, gider ve maaş kayıtlarını TEK işlemde siler (ya hepsi gider ya hiçbiri).
+
+        Silinen kayıtların adetlerini döndürür. Geri alınamaz.
+        """
+        silinen = self.sayilar()
+        with self._baglanti:
+            for tablo in ("gelir", "gider", "maas"):
+                self._baglanti.execute(f"DELETE FROM {tablo}")
+        return silinen
 
     def kapat(self) -> None:
         self._baglanti.close()

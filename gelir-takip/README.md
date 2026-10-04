@@ -19,7 +19,7 @@ gelir_takip/
   hesaplama.py    aylık özet, bütçe (kalan, harcama oranı), ay karşılaştırma
   servis.py       arayüzlerin tek giriş noktası (ButceServisi)
   demo.py         --demo için örnek veri
-  ui_tk/          Tkinter arayüzü (ana_pencere.py, formlar.py)
+  ui_tk/          Tkinter arayüzü (ana_pencere, formlar, ozet_sekmesi, grafikler, tema)
   ui_qt/          (Adım 11)   PySide6 arayüzü
 tests/            pytest
 ```
@@ -43,6 +43,11 @@ python -m gelir_takip --db yol/gelir.db   # başka bir veritabanı dosyası
 Kullanım: **Maaşı Düzenle** ile maaş girilir; **＋ Gider Ekle / ＋ Ek Gelir Ekle** ile kayıt eklenir.
 Satıra çift tıkla = düzenle, `Delete` = sil, `Ctrl+←` / `Ctrl+→` = önceki / sonraki ay.
 
+- **Özet sekmesi:** önceki aya göre kalan ve gider değişimi, harcama oranı çubuğu, gider özeti
+  (adet, ortalama, en yüksek) ve kategori dağılımları.
+- **Tümünü Sil…:** hesaplamaya baştan başlamak için TÜM aylardaki gider, ek gelir ve maaş geçmişini siler.
+  Silmeden önce kaç kaydın gideceği gösterilir ve onay istenir (varsayılan buton "Hayır"). Geri alınamaz.
+
 ## Testleri çalıştırma
 
 ```
@@ -60,7 +65,7 @@ python -m pytest
 | 4 | İş mantığı + testler | ✅ |
 | 5 | Tkinter: ana pencere, ay seçici, gelir tablosu | ✅ |
 | 6 | Tkinter: maaş formu + gider / ek gelir formu (ekle / düzenle / sil) | ✅ |
-| 7 | Tkinter: ayrıntılı özet (önceki ayla karşılaştırma, harcama oranı, kategori dağılımı) | ⏳ (temel özet çubuğu hazır) |
+| 7 | Tkinter: ayrıntılı özet (önceki ayla karşılaştırma, harcama oranı, kategori dağılımı) + Tümünü Sil | ✅ |
 | 8 | CSV dışa / içe aktarma | ⏳ |
 | 9 | Tkinter sürümünü cilalama ve gözden geçirme | ⏳ |
 | 10 | PySide6 tasarım kararları (tema, yerleşim, grafikler) | ⏳ |

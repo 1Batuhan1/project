@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .db import Depo, varsayilan_db_yolu
 from .hesaplama import AyKarsilastirma, AylikButce, butce_hesapla, degisim, onceki_ay
-from .models import KAYIT_SINIFLARI, TUR_GELIR, TUR_GIDER, VARSAYILAN_KATEGORILER, Kayit, Maas
+from .models import KAYIT_SINIFLARI, TUR_GELIR, TUR_GIDER, VARSAYILAN_KATEGORILER, Kayit, Maas, VeriSayilari
 
 
 @dataclass(frozen=True)
@@ -26,6 +26,9 @@ class AylikRapor:
     maas: Maas | None                        # bu ay geçerli maaş kaydı (None: hiç girilmemiş)
     butce: AylikButce
     kalan_karsilastirma: AyKarsilastirma     # "kalan" tutarının önceki aya göre değişimi
+    gider_karsilastirma: AyKarsilastirma     # toplam giderin önceki aya göre değişimi
+    onceki_butce: AylikButce                 # bir önceki ayın tablosu
+    onceki_veri_var: bool                    # önceki ayda maaş ya da kayıt var mı (yoksa karşılaştırma anlamsız)
 
 
 class ButceServisi:
@@ -94,7 +97,7 @@ class ButceServisi:
 
     def aylik_rapor(self, yil: int, ay: int) -> AylikRapor:
         gelirler, giderler, maas, butce = self._ay_butcesi(yil, ay)
-        onceki_butce = self._ay_butcesi(*onceki_ay(yil, ay))[3]
+        onceki_gelirler, onceki_giderler, onceki_maas, onceki_butce = self._ay_butcesi(*onceki_ay(yil, ay))
         hareketler = sorted(
             [Hareket(TUR_GELIR, k) for k in gelirler] + [Hareket(TUR_GIDER, k) for k in giderler],
             key=lambda h: (h.kayit.tarih, h.kayit.id),
@@ -105,4 +108,17 @@ class ButceServisi:
             maas=maas,
             butce=butce,
             kalan_karsilastirma=degisim(butce.kalan, onceki_butce.kalan),
+            gider_karsilastirma=degisim(butce.gider.toplam, onceki_butce.gider.toplam),
+            onceki_butce=onceki_butce,
+            onceki_veri_var=onceki_maas is not None or bool(onceki_gelirler) or bool(onceki_giderler),
         )
+
+    # ---- Toplu silme ---------------------------------------------------------
+
+    def veri_sayilari(self) -> VeriSayilari:
+        """Kayıtlı gider / ek gelir / maaş adetleri (silmeden önce kullanıcıya göstermek için)."""
+        return self._depo.sayilar()
+
+    def tum_verileri_sil(self) -> VeriSayilari:
+        """Tüm aylardaki gider, ek gelir ve maaş geçmişini siler. GERİ ALINAMAZ. Silinen adetleri döndürür."""
+        return self._depo.hepsini_sil()

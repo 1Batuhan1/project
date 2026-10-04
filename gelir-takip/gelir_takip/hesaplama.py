@@ -112,3 +112,32 @@ def butce_hesapla(
         kalan=toplam_gelir - gider.toplam,
         harcama_orani=harcama_orani,
     )
+
+
+DIGER_KATEGORILER = "Diğer kategoriler"
+
+
+@dataclass(frozen=True)
+class KategoriPayi:
+    kategori: str
+    tutar: Decimal
+    yuzde: Decimal  # toplam içindeki pay (0-100, 1 basamak)
+
+
+def kategori_paylari(ozet: AylikOzet, en_fazla: int | None = None) -> list[KategoriPayi]:
+    """Kategorilerin toplam içindeki payı, en büyük önce.
+
+    `en_fazla` verilirse ve kategori sayısı bunu aşarsa en küçükler tek bir
+    'Diğer kategoriler' satırında toplanır (toplam satır sayısı en_fazla olur).
+    Toplam sıfırsa boş liste döner.
+    """
+    if ozet.toplam <= 0:
+        return []
+    ogeler = list(ozet.kategori_toplamlari.items())
+    if en_fazla is not None and len(ogeler) > en_fazla:
+        geri_kalan = sum((tutar for _, tutar in ogeler[en_fazla - 1:]), _SIFIR)
+        ogeler = ogeler[: en_fazla - 1] + [(DIGER_KATEGORILER, geri_kalan)]
+    return [
+        KategoriPayi(kategori, tutar, (tutar / ozet.toplam * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+        for kategori, tutar in ogeler
+    ]

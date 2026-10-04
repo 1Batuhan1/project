@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 
 from gelir_takip.db import Depo
-from gelir_takip.models import KAYIT_SINIFLARI, Maas
+from gelir_takip.models import KAYIT_SINIFLARI, Maas, VeriSayilari
 
 
 @pytest.fixture
@@ -167,4 +167,55 @@ def test_dosyaya_kalici_yazar(tmp_path):
     d2 = Depo(yol)
     assert [g.tutar for g in d2.giderler.tumunu_listele()] == [Decimal("99.99")]
     assert d2.maaslar.gecerli(2026, 11).tutar == Decimal("5000.00")
+    d2.kapat()
+
+
+# ---- Toplu silme --------------------------------------------------------------
+
+def test_sayilar_bos_ve_dolu(depo):
+    assert depo.sayilar() == VeriSayilari(0, 0, 0)
+    assert depo.sayilar().toplam == 0
+    depo.gelirler.ekle(yeni("gelir", date(2026, 10, 1)))
+    depo.giderler.ekle(yeni("gider", date(2026, 10, 2)))
+    depo.giderler.ekle(yeni("gider", date(2026, 11, 2)))
+    depo.maaslar.ayarla(2026, 10, "100")
+    assert depo.sayilar() == VeriSayilari(gelir=1, gider=2, maas=1)
+    assert depo.sayilar().toplam == 4
+
+
+def test_hepsini_sil_butun_tablolari_temizler_ve_sayilari_dondurur(depo):
+    depo.gelirler.ekle(yeni("gelir", date(2026, 10, 1)))
+    depo.giderler.ekle(yeni("gider", date(2026, 10, 2)))
+    depo.giderler.ekle(yeni("gider", date(2025, 3, 2)))     # farklı aylar/yıllar da silinir
+    depo.maaslar.ayarla(2025, 1, "100")
+    depo.maaslar.ayarla(2026, 10, "200")
+    silinen = depo.hepsini_sil()
+    assert silinen == VeriSayilari(gelir=1, gider=2, maas=2)
+    assert depo.sayilar() == VeriSayilari(0, 0, 0)
+    assert depo.maaslar.gecerli(2026, 12) is None
+    assert depo.giderler.tumunu_listele() == []
+
+
+def test_hepsini_sil_sonrasi_yeniden_kullanilabilir(depo):
+    depo.giderler.ekle(yeni("gider", date(2026, 10, 2)))
+    depo.hepsini_sil()
+    kayit = depo.giderler.ekle(yeni("gider", date(2026, 10, 3), "42"))
+    assert depo.giderler.getir(kayit.id).tutar == Decimal("42.00")
+    depo.maaslar.ayarla(2026, 10, "5")
+    assert depo.maaslar.gecerli(2026, 10).tutar == Decimal("5.00")
+
+
+def test_hepsini_sil_bos_veritabaninda_hata_vermez(depo):
+    assert depo.hepsini_sil() == VeriSayilari(0, 0, 0)
+
+
+def test_hepsini_sil_dosyada_kalici(tmp_path):
+    yol = tmp_path / "gelir.db"
+    d1 = Depo(yol)
+    d1.giderler.ekle(yeni("gider", date(2026, 10, 2)))
+    d1.maaslar.ayarla(2026, 10, "100")
+    d1.hepsini_sil()
+    d1.kapat()
+    d2 = Depo(yol)
+    assert d2.sayilar().toplam == 0
     d2.kapat()

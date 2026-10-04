@@ -99,3 +99,16 @@ class Maas:
             raise GecersizKayitHatasi("Maaşın geçerlilik ayı geçerli değil.")
         _yil_dogrula(self.yil)
         self.tutar = _tutar_hazirla(self.tutar, sifir_olabilir=True)
+
+
+@dataclass(frozen=True)
+class VeriSayilari:
+    """Veritabanındaki kayıt adetleri (toplu silme öncesi uyarıda ve sonrasında kullanılır)."""
+
+    gelir: int = 0
+    gider: int = 0
+    maas: int = 0
+
+    @property
+    def toplam(self) -> int:
+        return self.gelir + self.gider + self.maas
